@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../models/expense.dart';
 import '../models/income.dart';
 import '../models/expense_preset.dart';
+import '../models/subscription.dart';
 
 // Import web-specific storage only if on web
 import 'dart:html' as html show window;
@@ -36,7 +37,7 @@ class DatabaseHelper {
       print('Database path: $path'); // Debug logging
       return await openDatabase(
         path,
-        version: 4, // Increased version for expense presets table
+        version: 5, // Increased version for subscriptions table
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -84,6 +85,27 @@ class DatabaseHelper {
         category TEXT NOT NULL,
         description TEXT,
         icon TEXT,
+        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+        updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+      )
+    ''');
+    
+    // Create subscriptions table
+    await db.execute('''
+      CREATE TABLE subscriptions(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        amount REAL NOT NULL,
+        category TEXT NOT NULL,
+        start_date INTEGER NOT NULL,
+        billing_cycle TEXT NOT NULL,
+        next_billing_date INTEGER NOT NULL,
+        description TEXT,
+        icon TEXT,
+        is_active INTEGER DEFAULT 1,
+        reminder_days TEXT DEFAULT '3,7',
+        last_paid_date INTEGER,
+        payment_status TEXT DEFAULT 'pending',
         created_at INTEGER DEFAULT (strftime('%s', 'now')),
         updated_at INTEGER DEFAULT (strftime('%s', 'now'))
       )
@@ -139,6 +161,29 @@ class DatabaseHelper {
           category TEXT NOT NULL,
           description TEXT,
           icon TEXT,
+          created_at INTEGER DEFAULT (strftime('%s', 'now')),
+          updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+        )
+      ''');
+    }
+    
+    if (oldVersion < 5) {
+      // Create subscriptions table
+      await db.execute('''
+        CREATE TABLE subscriptions(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          amount REAL NOT NULL,
+          category TEXT NOT NULL,
+          start_date INTEGER NOT NULL,
+          billing_cycle TEXT NOT NULL,
+          next_billing_date INTEGER NOT NULL,
+          description TEXT,
+          icon TEXT,
+          is_active INTEGER DEFAULT 1,
+          reminder_days TEXT DEFAULT '3,7',
+          last_paid_date INTEGER,
+          payment_status TEXT DEFAULT 'pending',
           created_at INTEGER DEFAULT (strftime('%s', 'now')),
           updated_at INTEGER DEFAULT (strftime('%s', 'now'))
         )
@@ -819,6 +864,149 @@ class DatabaseHelper {
       html.window.localStorage['savvy_presets'] = jsonString;
     } catch (e) {
       print('Error saving presets to web storage: $e');
+    }
+  }
+
+  // Subscription Methods
+  Future<List<Subscription>> getSubscriptions() async {
+    if (kIsWeb) {
+      // For web, use localStorage
+      try {
+        final jsonString = html.window.localStorage['savvy_subscriptions'];
+        if (jsonString == null || jsonString.isEmpty) return [];
+        
+        final List<dynamic> jsonList = json.decode(jsonString);
+        return jsonList.map((json) => Subscription.fromMap(json)).toList();
+      } catch (e) {
+        print('Error loading subscriptions from web storage: $e');
+        return [];
+      }
+    }
+
+    try {
+      final db = await database;
+      final List<Map<String, dynamic>> maps = await db.query(
+        'subscriptions',
+        orderBy: 'next_billing_date ASC',
+      );
+
+      return List.generate(maps.length, (i) {
+        return Subscription.fromMap(maps[i]);
+      });
+    } catch (e) {
+      print('Error getting subscriptions: $e');
+      return [];
+    }
+  }
+
+  Future<Subscription> insertSubscription(Subscription subscription) async {
+    if (kIsWeb) {
+      // For web, use localStorage
+      try {
+        final subscriptions = await getSubscriptions();
+        final newId = subscriptions.isEmpty ? 1 : (subscriptions.map((s) => s.id ?? 0).reduce((a, b) => a > b ? a : b) + 1);
+        final newSubscription = subscription.copyWith(id: newId);
+        subscriptions.add(newSubscription);
+        
+        await _saveSubscriptionsToWebStorage(subscriptions);
+        print('Inserted subscription: ${newSubscription.name} (web storage)');
+        return newSubscription;
+      } catch (e) {
+        print('Error inserting subscription to web storage: $e');
+        rethrow;
+      }
+    }
+
+    try {
+      final db = await database;
+      final id = await db.insert('subscriptions', subscription.toMap());
+      print('Inserted subscription: ${subscription.name}, ID: $id');
+      return subscription.copyWith(id: id);
+    } catch (e) {
+      print('Error inserting subscription: $e');
+      rethrow;
+    }
+  }
+
+  Future<int> updateSubscription(Subscription subscription) async {
+    if (kIsWeb) {
+      // For web, use localStorage
+      try {
+        final subscriptions = await getSubscriptions();
+        final index = subscriptions.indexWhere((s) => s.id == subscription.id);
+        if (index != -1) {
+          subscriptions[index] = subscription;
+          await _saveSubscriptionsToWebStorage(subscriptions);
+          print('Updated subscription: ${subscription.name} (web storage)');
+          return 1;
+        }
+        return 0;
+      } catch (e) {
+        print('Error updating subscription in web storage: $e');
+        return 0;
+      }
+    }
+
+    try {
+      final db = await database;
+      final rowsAffected = await db.update(
+        'subscriptions',
+        subscription.toMap(),
+        where: 'id = ?',
+        whereArgs: [subscription.id],
+      );
+      
+      print('Updated subscription: ${subscription.name}, rows affected: $rowsAffected');
+      return rowsAffected;
+    } catch (e) {
+      print('Error updating subscription: $e');
+      rethrow;
+    }
+  }
+
+  Future<int> deleteSubscription(int id) async {
+    if (kIsWeb) {
+      // For web, use localStorage
+      try {
+        final subscriptions = await getSubscriptions();
+        final originalLength = subscriptions.length;
+        subscriptions.removeWhere((s) => s.id == id);
+        if (subscriptions.length < originalLength) {
+          await _saveSubscriptionsToWebStorage(subscriptions);
+          print('Deleted subscription with ID: $id (web storage)');
+          return 1;
+        }
+        return 0;
+      } catch (e) {
+        print('Error deleting subscription from web storage: $e');
+        return 0;
+      }
+    }
+
+    try {
+      final db = await database;
+      final rowsAffected = await db.delete(
+        'subscriptions',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      
+      print('Deleted subscription with ID: $id, rows affected: $rowsAffected');
+      return rowsAffected;
+    } catch (e) {
+      print('Error deleting subscription: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _saveSubscriptionsToWebStorage(List<Subscription> subscriptions) async {
+    if (!kIsWeb) return;
+    
+    try {
+      final jsonString = json.encode(subscriptions.map((s) => s.toMap()).toList());
+      html.window.localStorage['savvy_subscriptions'] = jsonString;
+    } catch (e) {
+      print('Error saving subscriptions to web storage: $e');
     }
   }
 
