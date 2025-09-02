@@ -5,6 +5,7 @@ import 'providers/expense_provider.dart';
 import 'providers/income_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/expense_preset_provider.dart';
+import 'providers/subscription_provider.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
@@ -41,6 +42,7 @@ class SavvyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => IncomeProvider()),
         ChangeNotifierProvider(create: (context) => SettingsProvider()),
         ChangeNotifierProvider(create: (context) => ExpensePresetProvider()),
+        ChangeNotifierProvider(create: (context) => SubscriptionProvider()),
       ],
       child: Consumer<SettingsProvider>(
         builder: (context, settingsProvider, child) {

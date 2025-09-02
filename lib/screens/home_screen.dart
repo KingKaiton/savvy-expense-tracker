@@ -9,12 +9,14 @@ import '../widgets/income_card.dart';
 import '../widgets/category_chart.dart';
 import '../widgets/summary_card.dart';
 import '../widgets/budget_status_card.dart';
+import '../widgets/subscription_reminder_widget.dart';
 import '../widgets/preset_quick_access_widget.dart';
 import 'add_expense_screen.dart';
 import 'add_income_screen.dart';
 import 'expense_list_screen.dart';
 import 'analytics_screen.dart';
 import 'settings_screen.dart';
+import 'subscription_management_screen.dart';
 import 'preset_management_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -176,6 +178,15 @@ class _HomeTab extends StatelessWidget {
             tooltip: 'Expense Presets',
           ),
           IconButton(
+            icon: const Icon(Icons.subscriptions),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const SubscriptionManagementScreen()),
+              );
+            },
+            tooltip: 'Subscriptions',
+          ),
+          IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
               Navigator.of(context).push(
@@ -289,6 +300,9 @@ class _HomeTab extends StatelessWidget {
 
                     // Budget Status Card
                     const BudgetStatusCard(),
+                    
+                    // Subscription reminders
+                    const SubscriptionReminderWidget(),
 
                     const SizedBox(height: 8),
 
